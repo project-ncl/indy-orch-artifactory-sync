@@ -4,10 +4,9 @@ import json
 import os
 import re
 import sys
-
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import time
+import urllib.error
+import urllib.request
 
 
 def parse_indy_path(api_path):
@@ -17,16 +16,20 @@ def parse_indy_path(api_path):
     return match.group(1), match.group(2), match.group(3)
 
 
-def create_session():
-    session = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    session.mount("http://", HTTPAdapter(max_retries=retry))
-    return session
+def urlopen_with_retry(req, *, timeout=120, retries=3, backoff=1, retry_on=(500, 502, 503, 504)):
+    for attempt in range(retries + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code in retry_on and attempt < retries:
+                time.sleep(backoff * (2 ** attempt))
+                continue
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt < retries:
+                time.sleep(backoff * (2 ** attempt))
+                continue
+            raise
 
 
 def main():
@@ -40,7 +43,6 @@ def main():
         sys.exit("Error: INDY_URL environment variable is required")
 
     os.makedirs(args.output_dir, exist_ok=True)
-    session = create_session()
 
     metadata = []
     success_count = 0
@@ -65,10 +67,12 @@ def main():
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
             try:
-                with session.get(source_url, stream=True, timeout=120) as dl:
-                    dl.raise_for_status()
+                with urlopen_with_retry(source_url, timeout=120) as resp:
                     with open(tmp_path, "wb") as out:
-                        for chunk in dl.iter_content(chunk_size=8192):
+                        while True:
+                            chunk = resp.read(8192)
+                            if not chunk:
+                                break
                             out.write(chunk)
                 os.rename(tmp_path, local_path)
                 print(f"[OK]   line {line_num}: {repo_name}/{artifact_path}")
@@ -78,7 +82,7 @@ def main():
                     "artifact_path": artifact_path,
                 })
                 success_count += 1
-            except requests.RequestException as e:
+            except (urllib.error.URLError, TimeoutError) as e:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
                 print(f"[FAIL] line {line_num}: {repo_name}/{artifact_path} — {e}")

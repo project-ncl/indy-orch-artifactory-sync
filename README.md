@@ -4,7 +4,7 @@ Sync artifacts added in a certain time range from Indy to an Artifactory instanc
 
 ## Prerequisites
 
-- Python 3 with `requests` installed
+- Python 3 (no external dependencies)
 - A CSV file listing the artifacts to sync (columns: base path, relative path)
 
 ## Setup

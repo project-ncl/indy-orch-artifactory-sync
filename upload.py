@@ -1,27 +1,28 @@
 import argparse
+import base64
 import hashlib
 import json
 import os
 import sys
-
-import requests
-from requests.adapters import HTTPAdapter
-from requests.auth import HTTPBasicAuth
-from urllib3.util.retry import Retry
+import time
+import urllib.error
+import urllib.request
 
 
-def create_session(auth):
-    session = requests.Session()
-    session.auth = auth
-    retry = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["PUT"],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    session.mount("http://", HTTPAdapter(max_retries=retry))
-    return session
+def urlopen_with_retry(req, *, timeout=300, retries=3, backoff=1, retry_on=(500, 502, 503, 504)):
+    for attempt in range(retries + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code in retry_on and attempt < retries:
+                time.sleep(backoff * (2 ** attempt))
+                continue
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt < retries:
+                time.sleep(backoff * (2 ** attempt))
+                continue
+            raise
 
 
 def sha256_file(path):
@@ -48,8 +49,10 @@ def main():
         if not artifactory_user or not artifactory_password:
             sys.exit("Error: ARTIFACTORY_USER and ARTIFACTORY_PASSWORD environment variables are required")
 
-    auth = HTTPBasicAuth(artifactory_user or "", artifactory_password or "")
-    session = create_session(auth)
+    credentials = base64.b64encode(
+        f"{artifactory_user or ''}:{artifactory_password or ''}".encode()
+    ).decode()
+    auth_header = f"Basic {credentials}"
 
     with open(args.metadata) as f:
         metadata = json.load(f)
@@ -77,16 +80,20 @@ def main():
         try:
             checksum = sha256_file(local_path)
             with open(local_path, "rb") as f:
-                upload = session.put(
-                    target_url,
-                    data=f,
-                    headers={"X-Checksum-Sha256": checksum},
-                    timeout=300,
-                )
-                upload.raise_for_status()
+                data = f.read()
+            req = urllib.request.Request(
+                target_url,
+                data=data,
+                method="PUT",
+                headers={
+                    "X-Checksum-Sha256": checksum,
+                    "Authorization": auth_header,
+                },
+            )
+            urlopen_with_retry(req, timeout=300)
             print(f"[OK]   {repo_name}/{artifact_path}")
             success_count += 1
-        except requests.RequestException as e:
+        except (urllib.error.URLError, TimeoutError) as e:
             print(f"[FAIL] {repo_name}/{artifact_path} — {e}")
             fail_count += 1
 
