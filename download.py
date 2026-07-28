@@ -7,6 +7,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def parse_indy_path(api_path):
@@ -32,10 +33,34 @@ def urlopen_with_retry(req, *, timeout=120, retries=3, backoff=1, retry_on=(500,
             raise
 
 
+def download_one(source_url, local_path, line_num, repo_name, artifact_path):
+    tmp_path = local_path + ".tmp"
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    try:
+        with urlopen_with_retry(source_url, timeout=120) as resp:
+            with open(tmp_path, "wb") as out:
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        os.rename(tmp_path, local_path)
+        return {
+            "local_path": local_path,
+            "repo_name": repo_name,
+            "artifact_path": artifact_path,
+        }
+    except (urllib.error.URLError, TimeoutError) as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download artifacts from Indy")
     parser.add_argument("--csv", required=True, help="Path to the CSV file")
     parser.add_argument("--output-dir", required=True, help="Directory to download artifacts into")
+    parser.add_argument("--workers", type=int, default=4, help="Number of parallel downloads (default: 4)")
     args = parser.parse_args()
 
     indy_url = os.environ.get("INDY_URL")
@@ -44,9 +69,7 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    metadata = []
-    success_count = 0
-    fail_count = 0
+    work_items = []
     skip_count = 0
 
     with open(args.csv, newline="") as f:
@@ -63,36 +86,33 @@ def main():
 
             source_url = indy_url.rstrip("/") + full_path
             local_path = os.path.join(args.output_dir, repo_name, artifact_path)
-            tmp_path = local_path + ".tmp"
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            work_items.append((source_url, local_path, line_num, repo_name, artifact_path))
 
+    metadata = []
+    fail_count = 0
+    total = len(work_items)
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {
+            pool.submit(download_one, *item): item
+            for item in work_items
+        }
+        for i, future in enumerate(as_completed(futures), 1):
+            item = futures[future]
+            _, _, line_num, repo_name, artifact_path = item
             try:
-                with urlopen_with_retry(source_url, timeout=120) as resp:
-                    with open(tmp_path, "wb") as out:
-                        while True:
-                            chunk = resp.read(8192)
-                            if not chunk:
-                                break
-                            out.write(chunk)
-                os.rename(tmp_path, local_path)
-                print(f"[OK]   line {line_num}: {repo_name}/{artifact_path}")
-                metadata.append({
-                    "local_path": local_path,
-                    "repo_name": repo_name,
-                    "artifact_path": artifact_path,
-                })
-                success_count += 1
+                result = future.result()
+                metadata.append(result)
+                print(f"[{i}/{total} {100*i//total}%] [OK]   line {line_num}: {repo_name}/{artifact_path}")
             except (urllib.error.URLError, TimeoutError) as e:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-                print(f"[FAIL] line {line_num}: {repo_name}/{artifact_path} — {e}")
                 fail_count += 1
+                print(f"[{i}/{total} {100*i//total}%] [FAIL] line {line_num}: {repo_name}/{artifact_path} — {e}")
 
     metadata_file = os.path.join(args.output_dir, "metadata.json")
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nDone. downloaded={success_count} failed={fail_count} skipped={skip_count}")
+    print(f"\nDone. downloaded={len(metadata)} failed={fail_count} skipped={skip_count}")
     print(f"Metadata written to {metadata_file}")
 
 
