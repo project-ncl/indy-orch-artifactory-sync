@@ -8,5 +8,6 @@ export PGDB=""
 
 export INDY_URL="https://indy-url"
 export ARTIFACTORY_URL="https://your-artifactory-instance.com/artifactory"
-export ARTIFACTORY_USER="your-user"
-export ARTIFACTORY_PASSWORD="your-password-or-token"
+
+# Generate it via UI: click on your name (top right), Edit Profile, Generate an Identity token
+export ARTIFACTORY_TOKEN="token"

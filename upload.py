@@ -66,19 +66,15 @@ def main():
     args = parser.parse_args()
 
     artifactory_url = os.environ.get("ARTIFACTORY_URL")
-    artifactory_user = os.environ.get("ARTIFACTORY_USER")
-    artifactory_password = os.environ.get("ARTIFACTORY_PASSWORD")
+    artifactory_token = os.environ.get("ARTIFACTORY_TOKEN")
 
     if not args.dry_run:
         if not artifactory_url:
             sys.exit("Error: ARTIFACTORY_URL environment variable is required")
-        if not artifactory_user or not artifactory_password:
-            sys.exit("Error: ARTIFACTORY_USER and ARTIFACTORY_PASSWORD environment variables are required")
+        if not artifactory_token:
+            sys.exit("Error: ARTIFACTORY_TOKEN environment variable is required")
 
-    credentials = base64.b64encode(
-        f"{artifactory_user or ''}:{artifactory_password or ''}".encode()
-    ).decode()
-    auth_header = f"Basic {credentials}"
+    auth_header = f"Bearer {artifactory_token}"
 
     with open(args.metadata) as f:
         metadata = json.load(f)
