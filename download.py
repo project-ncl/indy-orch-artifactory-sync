@@ -1,5 +1,6 @@
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -8,6 +9,21 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+MAX_COMPONENT = 255
+
+
+def safe_path(path):
+    parts = path.split(os.sep)
+    safe_parts = []
+    for part in parts:
+        if len(part.encode("utf-8")) <= MAX_COMPONENT:
+            safe_parts.append(part)
+        else:
+            h = hashlib.sha256(part.encode("utf-8")).hexdigest()[:16]
+            trunk = part[:MAX_COMPONENT - 17].rstrip()
+            safe_parts.append(f"{trunk}_{h}")
+    return os.sep.join(safe_parts)
 
 
 def parse_indy_path(api_path):
@@ -89,7 +105,7 @@ def main():
                 continue
 
             source_url = indy_url.rstrip("/") + full_path
-            local_path = os.path.join(args.output_dir, repo_name, artifact_path)
+            local_path = safe_path(os.path.join(args.output_dir, repo_name, artifact_path))
             work_items.append((source_url, local_path, line_num, pkg_type, repo_name, artifact_path, buildrecord_id))
 
     metadata = []
