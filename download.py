@@ -50,7 +50,7 @@ def urlopen_with_retry(req, *, timeout=120, retries=3, backoff=1, retry_on=(500,
 
 
 def download_one(source_url, local_path, line_num, pkg_type, repo_name, artifact_path, buildrecord_id):
-    tmp_path = local_path + ".tmp"
+    tmp_path = safe_path(local_path + ".tmp")
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     try:
         with urlopen_with_retry(source_url, timeout=120) as resp:
@@ -123,7 +123,7 @@ def main():
 
             work_items.append((source_url, local_path, line_num, pkg_type, repo_name, artifact_path, buildrecord_id))
 
-    fail_count = 0
+    failures = []
     total = len(work_items)
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -133,20 +133,34 @@ def main():
         }
         for i, future in enumerate(as_completed(futures), 1):
             item = futures[future]
-            _, _, line_num, _, repo_name, artifact_path, _ = item
+            source_url, _, line_num, pkg_type, repo_name, artifact_path, buildrecord_id = item
             try:
                 result = future.result()
                 metadata.append(result)
                 print(f"[{i}/{total} {100*i//total}%] [OK]   line {line_num}: {repo_name}/{artifact_path}")
             except (urllib.error.URLError, TimeoutError) as e:
-                fail_count += 1
+                failures.append({
+                    "line": line_num,
+                    "source_url": source_url,
+                    "pkg_type": pkg_type,
+                    "repo_name": repo_name,
+                    "artifact_path": artifact_path,
+                    "buildrecord_id": buildrecord_id,
+                    "error": str(e),
+                })
                 print(f"[{i}/{total} {100*i//total}%] [FAIL] line {line_num}: {repo_name}/{artifact_path} — {e}")
 
     metadata_file = os.path.join(args.output_dir, "metadata.json")
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nDone. downloaded={len(metadata) - exist_count} already_existed={exist_count} failed={fail_count} skipped={skip_count}")
+    if failures:
+        failures_file = os.path.join(args.output_dir, "failures.json")
+        with open(failures_file, "w") as f:
+            json.dump(failures, f, indent=2)
+        print(f"Failures written to {failures_file}")
+
+    print(f"\nDone. downloaded={len(metadata) - exist_count} already_existed={exist_count} failed={len(failures)} skipped={skip_count}")
     print(f"Metadata written to {metadata_file}")
 
 
