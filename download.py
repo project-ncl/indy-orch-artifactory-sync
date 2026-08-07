@@ -103,7 +103,7 @@ def main():
         }
         for i, future in enumerate(as_completed(futures), 1):
             item = futures[future]
-            _, _, line_num, _, repo_name, artifact_path = item
+            _, _, line_num, _, repo_name, artifact_path, _ = item
             try:
                 result = future.result()
                 metadata.append(result)
