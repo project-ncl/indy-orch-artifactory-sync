@@ -34,11 +34,20 @@ def sha256_file(path):
     return h.hexdigest()
 
 
-def upload_one(entry, artifactory_url, auth_header):
-    local_path = entry["local_path"]
+def resolve_repo(entry, repo_map):
+    pkg_type = entry.get("pkg_type", "")
     repo_name = entry["repo_name"]
+    key = f"{pkg_type}:{repo_name}"
+    if key not in repo_map:
+        raise KeyError(f"no artifactory repo configured for {key}")
+    return repo_map[key]
+
+
+def upload_one(entry, artifactory_url, auth_header, repo_map):
+    local_path = entry["local_path"]
+    target_repo = resolve_repo(entry, repo_map)
     artifact_path = entry["artifact_path"]
-    target_url = artifactory_url.rstrip("/") + f"/{repo_name}/{artifact_path}"
+    target_url = artifactory_url.rstrip("/") + f"/{target_repo}/{artifact_path}"
 
     if not os.path.exists(local_path):
         raise FileNotFoundError(f"file not found: {local_path}")
@@ -62,8 +71,13 @@ def main():
     parser = argparse.ArgumentParser(description="Upload artifacts to Artifactory")
     parser.add_argument("--metadata", required=True, help="Path to the metadata.json file")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without uploading")
+    parser.add_argument("--repo-config", default=os.path.join(os.path.dirname(__file__), "repo_config.json"),
+                        help="Path to repo mapping config (default: repo_config.json)")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel uploads (default: 4)")
     args = parser.parse_args()
+
+    with open(args.repo_config) as f:
+        repo_map = json.load(f)
 
     artifactory_url = os.environ.get("ARTIFACTORY_URL")
     artifactory_token = os.environ.get("ARTIFACTORY_TOKEN")
@@ -81,10 +95,10 @@ def main():
 
     if args.dry_run:
         for entry in metadata:
-            repo_name = entry["repo_name"]
+            target_repo = resolve_repo(entry, repo_map)
             artifact_path = entry["artifact_path"]
-            target_url = artifactory_url.rstrip("/") + f"/{repo_name}/{artifact_path}" if artifactory_url else None
-            print(f"[DRY-RUN] {repo_name}/{artifact_path}")
+            target_url = artifactory_url.rstrip("/") + f"/{target_repo}/{artifact_path}" if artifactory_url else None
+            print(f"[DRY-RUN] {target_repo}/{artifact_path}")
             print(f"  local:  {entry['local_path']}")
             print(f"  PUT     {target_url or '(ARTIFACTORY_URL not set)'}")
         return
@@ -95,20 +109,20 @@ def main():
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
-            pool.submit(upload_one, entry, artifactory_url, auth_header): entry
+            pool.submit(upload_one, entry, artifactory_url, auth_header, repo_map): entry
             for entry in metadata
         }
         for i, future in enumerate(as_completed(futures), 1):
             entry = futures[future]
-            repo_name = entry["repo_name"]
+            target_repo = resolve_repo(entry, repo_map)
             artifact_path = entry["artifact_path"]
             try:
                 future.result()
                 success_count += 1
-                print(f"[{i}/{total} {100*i//total}%] [OK]   {repo_name}/{artifact_path}")
+                print(f"[{i}/{total} {100*i//total}%] [OK]   {target_repo}/{artifact_path}")
             except Exception as e:
                 fail_count += 1
-                print(f"[{i}/{total} {100*i//total}%] [FAIL] {repo_name}/{artifact_path} — {e}")
+                print(f"[{i}/{total} {100*i//total}%] [FAIL] {target_repo}/{artifact_path} — {e}")
 
     print(f"\nDone. uploaded={success_count} failed={fail_count}")
 
