@@ -33,7 +33,7 @@ def urlopen_with_retry(req, *, timeout=120, retries=3, backoff=1, retry_on=(500,
             raise
 
 
-def download_one(source_url, local_path, line_num, repo_name, artifact_path):
+def download_one(source_url, local_path, line_num, pkg_type, repo_name, artifact_path, buildrecord_id):
     tmp_path = local_path + ".tmp"
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     try:
@@ -47,8 +47,10 @@ def download_one(source_url, local_path, line_num, repo_name, artifact_path):
         os.rename(tmp_path, local_path)
         return {
             "local_path": local_path,
+            "pkg_type": pkg_type,
             "repo_name": repo_name,
             "artifact_path": artifact_path,
+            "buildrecord_id": buildrecord_id,
         }
     except (urllib.error.URLError, TimeoutError) as e:
         if os.path.exists(tmp_path):
@@ -78,6 +80,8 @@ def main():
             full_path = row[0] + row[1]
             full_path = re.sub(r"/{2,}", "/", full_path)
 
+            buildrecord_id = row[2].strip() if len(row) > 2 else ""
+
             pkg_type, repo_name, artifact_path = parse_indy_path(full_path)
             if not pkg_type:
                 print(f"[SKIP] line {line_num}: cannot parse path: {full_path}")
@@ -86,7 +90,7 @@ def main():
 
             source_url = indy_url.rstrip("/") + full_path
             local_path = os.path.join(args.output_dir, repo_name, artifact_path)
-            work_items.append((source_url, local_path, line_num, repo_name, artifact_path))
+            work_items.append((source_url, local_path, line_num, pkg_type, repo_name, artifact_path, buildrecord_id))
 
     metadata = []
     fail_count = 0
@@ -99,7 +103,7 @@ def main():
         }
         for i, future in enumerate(as_completed(futures), 1):
             item = futures[future]
-            _, _, line_num, repo_name, artifact_path = item
+            _, _, line_num, _, repo_name, artifact_path = item
             try:
                 result = future.result()
                 metadata.append(result)

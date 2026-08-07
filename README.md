@@ -9,7 +9,7 @@ Sync artifacts added in a certain time range from Indy to an Artifactory instanc
 
 ```
 export PGPASSWORD=''
-psql -h <server> -d <orch> <orch> -c "\copy (select tr.repositorypath, ar.deploypath from artifact ar join targetrepository tr on ar.targetrepository_id = tr.id where ar.modificationtime >= '2026-07-16' and ar.modificationtime < '2026-08-07' and tr.repositorypath like '%/hosted/%') to '/tmp/test.csv' WITH (format csv)"
+psql -h <server> -d <orch> <orch> -c "\copy (select tr.repositorypath, ar.deploypath, ar.buildrecord_id from artifact ar join targetrepository tr on ar.targetrepository_id = tr.id where ar.modificationtime >= '2026-07-16' and ar.modificationtime < '2026-08-07' and tr.repositorypath like '%/hosted/%') to '/tmp/test.csv' WITH (format csv)"
 ```
 
 ## Setup
