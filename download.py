@@ -88,7 +88,9 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     work_items = []
+    metadata = []
     skip_count = 0
+    exist_count = 0
 
     with open(args.csv, newline="") as f:
         reader = csv.reader(f)
@@ -106,9 +108,21 @@ def main():
 
             source_url = indy_url.rstrip("/") + full_path
             local_path = safe_path(os.path.join(args.output_dir, repo_name, artifact_path))
+
+            if os.path.exists(local_path):
+                print(f"[EXIST] line {line_num}: {repo_name}/{artifact_path} — already downloaded, skipping")
+                metadata.append({
+                    "local_path": local_path,
+                    "pkg_type": pkg_type,
+                    "repo_name": repo_name,
+                    "artifact_path": artifact_path,
+                    "buildrecord_id": buildrecord_id,
+                })
+                exist_count += 1
+                continue
+
             work_items.append((source_url, local_path, line_num, pkg_type, repo_name, artifact_path, buildrecord_id))
 
-    metadata = []
     fail_count = 0
     total = len(work_items)
 
@@ -132,7 +146,7 @@ def main():
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nDone. downloaded={len(metadata)} failed={fail_count} skipped={skip_count}")
+    print(f"\nDone. downloaded={len(metadata) - exist_count} already_existed={exist_count} failed={fail_count} skipped={skip_count}")
     print(f"Metadata written to {metadata_file}")
 
 
