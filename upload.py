@@ -74,6 +74,9 @@ def main():
     parser.add_argument("--repo-config", default=os.path.join(os.path.dirname(__file__), "repo_config.json"),
                         help="Path to repo mapping config (default: repo_config.json)")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel uploads (default: 4)")
+    parser.add_argument("--repos", nargs="+", metavar="TYPE:NAME",
+                        help="Only upload for these repos (e.g. maven:shared-imports maven:pnc-builds). "
+                             "If omitted, all repos are uploaded.")
     args = parser.parse_args()
 
     with open(args.repo_config) as f:
@@ -92,6 +95,13 @@ def main():
 
     with open(args.metadata) as f:
         metadata = json.load(f)
+
+    if args.repos:
+        allowed = set(args.repos)
+        metadata = [e for e in metadata if f"{e.get('pkg_type', '')}:{e['repo_name']}" in allowed]
+        if not metadata:
+            print(f"No entries match --repos filter: {args.repos}")
+            return
 
     if args.dry_run:
         for entry in metadata:
