@@ -3,17 +3,22 @@ import base64
 import hashlib
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
 
 def urlopen_with_retry(req, *, timeout=300, retries=3, backoff=1, retry_on=(500, 502, 503, 504)):
     for attempt in range(retries + 1):
         try:
-            return urllib.request.urlopen(req, timeout=timeout)
+            return urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx)
         except urllib.error.HTTPError as e:
             if e.code in retry_on and attempt < retries:
                 time.sleep(backoff * (2 ** attempt))
