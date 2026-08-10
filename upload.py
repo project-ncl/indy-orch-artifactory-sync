@@ -120,6 +120,7 @@ def main():
 
     success_count = 0
     fail_count = 0
+    failures = []
     total = len(metadata)
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -137,7 +138,14 @@ def main():
                 print(f"[{i}/{total} {100*i//total}%] [OK]   {target_repo}/{artifact_path}")
             except Exception as e:
                 fail_count += 1
+                failures.append({"repo": target_repo, "artifact_path": artifact_path, "local_path": entry["local_path"], "error": str(e)})
                 print(f"[{i}/{total} {100*i//total}%] [FAIL] {target_repo}/{artifact_path} — {e}")
+
+    if failures:
+        failures_file = os.path.splitext(args.metadata)[0] + "_upload_failures.json"
+        with open(failures_file, "w") as f:
+            json.dump(failures, f, indent=2)
+        print(f"\nFailures written to {failures_file}")
 
     print(f"\nDone. uploaded={success_count} failed={fail_count}")
 
