@@ -1,6 +1,6 @@
 {
   "maven:shared-imports": "pnc-mvn-imports",
-  "maven:pnc-builds": "pnc-mvn-builds",
+  "maven:pnc-builds": "pnc-mvn-rh-builds",
   "npm:shared-imports": "pnc-npm-imports",
   "npm:pnc-builds": "pnc-npm-builds"
 }
