@@ -66,6 +66,7 @@ def upload_one(entry, artifactory_url, auth_header, repo_map):
         method="PUT",
         headers={
             "X-Checksum-Sha256": checksum,
+            "X-Checksum-Deploy": "true",
             "Authorization": auth_header,
         },
     )
