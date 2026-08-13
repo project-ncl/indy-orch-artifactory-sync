@@ -58,6 +58,29 @@ def upload_one(entry, artifactory_url, auth_header, repo_map):
         raise FileNotFoundError(f"file not found: {local_path}")
 
     checksum = sha256_file(local_path)
+
+    # First, try to deploy by checksum only (no data)
+    req = urllib.request.Request(
+        target_url,
+        method="PUT",
+        headers={
+            "X-Checksum-Sha256": checksum,
+            "X-Checksum-Deploy": "true",
+            "Authorization": auth_header,
+        },
+    )
+
+    try:
+        urlopen_with_retry(req, timeout=300)
+        # Success! File was deployed by checksum
+        return
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            # Some other error, re-raise it
+            raise
+        # 404 means checksum doesn't exist, need to upload the actual file
+
+    # Upload the actual file content
     with open(local_path, "rb") as f:
         data = f.read()
     req = urllib.request.Request(
