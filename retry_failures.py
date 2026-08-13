@@ -47,7 +47,6 @@ def upload_one(entry, artifactory_url, auth_header):
     if not os.path.exists(local_path):
         raise FileNotFoundError(f"file not found: {local_path}")
 
-    checksum = sha256_file(local_path)
     with open(local_path, "rb") as f:
         data = f.read()
     req = urllib.request.Request(
@@ -115,6 +114,20 @@ def main():
                 future.result()
                 success_count += 1
                 print(f"[{i}/{total} {100*i//total}%] [OK]   {target_repo}/{artifact_path}")
+            except urllib.error.HTTPError as e:
+                fail_count += 1
+                error_msg = str(e)
+                if e.code == 404:
+                    try:
+                        body = e.read().decode('utf-8', errors='replace')
+                        print(f"[{i}/{total} {100*i//total}%] [FAIL] {target_repo}/{artifact_path} — {e}")
+                        print(f"  Response body: {body}")
+                        error_msg = f"{e} — Body: {body}"
+                    except Exception:
+                        print(f"[{i}/{total} {100*i//total}%] [FAIL] {target_repo}/{artifact_path} — {e}")
+                else:
+                    print(f"[{i}/{total} {100*i//total}%] [FAIL] {target_repo}/{artifact_path} — {e}")
+                still_failed.append({"repo": target_repo, "artifact_path": artifact_path, "local_path": entry["local_path"], "error": error_msg})
             except Exception as e:
                 fail_count += 1
                 still_failed.append({"repo": target_repo, "artifact_path": artifact_path, "local_path": entry["local_path"], "error": str(e)})
